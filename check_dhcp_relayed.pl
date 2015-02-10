@@ -68,6 +68,8 @@
 #                          -N  netmask
 #                              Netmask for the emulated network.
 #                              e.g. 255.255.255.0
+#                          -I  ip_addr
+#                              IP addr expected to be offered by DHCP server
 #                          -v  Be verbose... Useful for command line testing/debugging.
 #                          -t  timeout in secs
 #                              Note that the script will time out while waiting the server
@@ -78,6 +80,7 @@
 #                              -m 12:22:33:44:55:66
 #                              -n 139.179.123.0 
 #                              -N 255.255.255.0 
+#                              -I 139.179.123.234
 #                              -t 10
 #
 #
@@ -117,10 +120,12 @@
   
   $verbose = 0;
 
-  getopts ("vH:m:n:N:t:");
+  $ip_addr = 0;
+  getopts ("vH:m:n:N:I:t:");
   $dhcp_server = $opt_H if($opt_H);
   $netmask     = $opt_N if($opt_N);
   $network     = $opt_n if($opt_n);
+  $ip_addr     = $opt_I if($opt_I);
 
   $timeout = 5;
   $timeout = $opt_t   if($opt_t);
@@ -141,7 +146,7 @@
   $mac = $opt_m    if ($opt_m);  # if the user has specified a MAC addr, use it!
 
   $usage = "Usage:
-            check_dhcp_relayed.pl [-v] -H <server_ip> -n <network> -N <netmask> [-m <mac_addr>] [-t <secs>]";
+            check_dhcp_relayed.pl [-v] -H <server_ip> -n <network> -N <netmask> [-m <mac_addr>] [-I <ip_addr>] [-t <secs>]";
 
   nagios_response (2, $usage) if (!$dhcp_server);
   nagios_response (2, $usage) if (!$netmask);
@@ -223,7 +228,16 @@
    }
   
   if($ip_is_good) {
-         nagios_response(0,"OK");  # An offering is good enough for us. Means server is working
+      if ($ip_addr) {
+          if ($offered_ip eq $ip_addr) {
+	      print_output ("  ".$ip_addr." matches offered\n");
+              nagios_response(0,"OK");  # Offered IP matches expected IP
+	  } else {
+              nagios_response(2,"CRITICAL: incorrect DHCP-offered IP");
+	  }
+      } else {
+          nagios_response(0,"OK");  # An offering is good enough for us. Means server is working
+      }
   } else {
          nagios_response(2,"CRITICAL: Did not get a DHCP offer");
   } 
