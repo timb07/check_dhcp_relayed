@@ -19,15 +19,15 @@
 #
 #
 #############  IMPORTANT ################
-# The -U param allows Perl to do unsafe 
-# operations such as allowing to run SUID 
-# programs. The script needs to be SUID 
+# The -U param allows Perl to do unsafe
+# operations such as allowing to run SUID
+# programs. The script needs to be SUID
 # in order to broadcast/unicast on port 67, 68.
 #
-# The -X param supresses warnings. Warnings 
+# The -X param supresses warnings. Warnings
 # confuse Nagios.
 #
-# Please note the security override and 
+# Please note the security override and
 # use at your own risk.
 #########################################
 
@@ -35,13 +35,15 @@
 #
 # 27 Nov 2012
 
+# needs Debian packages: libnet-dhcp-perl libnet-address-ip-local-perl
+
 # A Perl script to be used as a Nagios check command.
-# The script tests whether a DHCP server (localnet or 
+# The script tests whether a DHCP server (localnet or
 # remote) can offer IP addresses.
 #
 # This script can be used to test whether a DHCP
 # server can offer IP addresses to a specific subnet.
-# 
+#
 # The script emulates a DHCP relay to check whether a
 # remote DHCP server can talk DHCP to the Nagios Server.
 
@@ -76,10 +78,10 @@
 #                              to make an offer when the address pool is exhausted.
 #    e.g.
 #        check_dhcp_relayed.pl -v
-#                              -H 139.179.1.168 
+#                              -H 139.179.1.168
 #                              -m 12:22:33:44:55:66
-#                              -n 139.179.123.0 
-#                              -N 255.255.255.0 
+#                              -n 139.179.123.0
+#                              -N 255.255.255.0
 #                              -I 139.179.123.234
 #                              -t 10
 #
@@ -104,7 +106,7 @@
 #                      interpreter.
 
 #
-# Authors:	Yavuz Selim Komur (komur @t bilkent.edu.tr)
+# Authors:      Yavuz Selim Komur (komur @t bilkent.edu.tr)
 #               Can Ugur Ayfer (cayfer @t bilkent.edu.tr)
 
 
@@ -117,7 +119,7 @@
   use Getopt::Std;
 
   # Parse the command line options
-  
+
   $verbose = 0;
 
   $ip_addr = 0;
@@ -127,8 +129,8 @@
   $network     = $opt_n if($opt_n);
   $ip_addr     = $opt_I if($opt_I);
 
-  $timeout = 5;
-  $timeout = $opt_t   if($opt_t);
+  $timeout     = 5;
+  $timeout     = $opt_t if($opt_t);
 
   $verbose     = $opt_v;
 
@@ -143,10 +145,9 @@
   $sec  = sprintf("%02x",$sec);
   $mac = "99:".$mon.":".$mday.":".$hour.":".$min.":".$sec;
 
-  $mac = $opt_m    if ($opt_m);  # if the user has specified a MAC addr, use it!
+  $mac = $opt_m if ($opt_m);  # if the user has specified a MAC addr, use it!
 
-  $usage = "Usage:
-            check_dhcp_relayed.pl [-v] -H <server_ip> -n <network> -N <netmask> [-m <mac_addr>] [-I <ip_addr>] [-t <secs>]";
+  $usage = "Usage: check_dhcp_relayed.pl [-v] -H <server_ip> -n <network> -N <netmask> [-m <mac_addr>] [-I <ip_addr>] [-t <secs>]";
 
   nagios_response (2, $usage) if (!$dhcp_server);
   nagios_response (2, $usage) if (!$netmask);
@@ -154,7 +155,11 @@
 
   $mac =~ s/://g;  # strip the mac address off any colons
 
-  $my_ip = Net::Address::IP::Local->public_ipv4;  # who the hell am I
+  # who the hell am I, https://metacpan.org/pod/Net::Address::IP::Local
+  $my_ip = Net::Address::IP::Local->connected_to($dhcp_server);
+  if (not $my_ip) {
+      $my_ip = Net::Address::IP::Local->public_ipv4;
+  }
 
   # create a DHCP Packet
   $xid = int(rand(0x12345678));
@@ -163,14 +168,14 @@
                         Xid => $xid,                  # random xid
                         Flags => 0x8000,              # ask for broadcast answer
                         DHO_DHCP_MESSAGE_TYPE() => DHCPDISCOVER(),
-			Giaddr => $my_ip,             # Client IP Addr
+                        Giaddr => $my_ip,             # Client IP Addr
                         Chaddr => $mac,               # Client MAC Addr
                         );
   $discovery_connection->addOptionValue(DHO_SUBNET_SELECTION(), $network);
   $discovery_connection->addOptionValue(DHO_SUBNET_MASK(), $netmask);
 
   $out = $discovery_connection->toString();
-  print_output ("Sending discovery message to $dhcp_server for network $network/$netmask using MAC: $mac...\n");
+  print_output ("Sending discovery message to $dhcp_server for network $network/$netmask using MAC $mac via $my_ip\n");
 
   # send DISCOVER packet
   $listen = IO::Socket::INET->new(Proto => 'udp',
@@ -178,13 +183,13 @@
                                   LocalPort => '67',
                                   Timeout   => 10,
                                   PeerAddr => $dhcp_server)
-                or die "socket: $@";     
+                or die "socket: $@";
   $handle = IO::Socket::INET->new(Proto => 'udp',
                                   PeerPort => '67',
                                   Timeout   => 10,
                                   LocalPort => '68',
                                   PeerAddr => $dhcp_server)
-                or die "socket: $@";    
+                or die "socket: $@";
   $handle->send($discovery_connection->serialize())
                 or die "Error sending broadcast message:$!\n";
 
@@ -226,21 +231,21 @@
        print_output ("     ".$line."\n") if ($line=~ /DHO_SUBNET_MASK/);
        print_output ("     ".$line."\n") if ($line=~ /DHO_LEASE_TIME/);
    }
-  
+
   if($ip_is_good) {
       if ($ip_addr) {
           if ($offered_ip eq $ip_addr) {
-	      print_output ("  ".$ip_addr." matches offered\n");
+              print_output ("  ".$ip_addr." matches offered\n");
               nagios_response(0,"OK");  # Offered IP matches expected IP
-	  } else {
+          } else {
               nagios_response(2,"CRITICAL: incorrect DHCP-offered IP");
-	  }
+          }
       } else {
           nagios_response(0,"OK");  # An offering is good enough for us. Means server is working
       }
   } else {
-         nagios_response(2,"CRITICAL: Did not get a DHCP offer");
-  } 
+      nagios_response(2,"CRITICAL: Did not get a DHCP offer");
+  }
 
   exit;
 
@@ -257,7 +262,7 @@
   }
 
   sub print_output {
-      return if (!$verbose);  # stay silent if not verbose 
+      return if (!$verbose);  # stay silent if not verbose
       $msg = shift;
       print $msg;
       return;
